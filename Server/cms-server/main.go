@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	controller "github.com/maisarasherif/cms-go/Server/cms-server/controllers"
 )
 
 func main() {
@@ -13,6 +14,8 @@ func main() {
 	router.GET("/hello", func(c *gin.Context) {
 		c.String(200, "Hello, CMS!")
 	})
+
+	router.GET("/personnel", controller.GetPersonnel())
 
 	if err := router.Run(":8080"); err != nil {
 		fmt.Println("Failed to start server", err)
