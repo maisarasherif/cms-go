@@ -13,8 +13,9 @@ type Skills struct {
 }
 
 type Personnel struct {
-	ID           bson.ObjectID `bson:"_id" json:"_id"`
+	ID           bson.ObjectID `bson:"_id,omitempty" json:"_id,omitempty"`
 	Name         string        `bson:"name" json:"name" validate:"required,min=2,max=100"`
+	CompanyID    string        `bson:"company_id" json:"company_id" validate:"required,min=1,max=10"`
 	Position     string        `bson:"position" json:"position" validate:"required,min=2,max=100"`
 	Image        *string       `bson:"image" json:"image" validate:"omitempty,url"`
 	T_BOSIET_EXP *time.Time    `bson:"t_bosiet_exp" json:"t_bosiet_exp" validate:"omitempty,gte=now"`

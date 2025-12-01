@@ -17,6 +17,10 @@ func main() {
 
 	router.GET("/personnel", controller.GetPersonnel())
 
+	router.GET("/person/:company_id", controller.GetPerson())
+
+	router.POST("/addpersonnel", controller.AddPersonnel())
+
 	if err := router.Run(":8080"); err != nil {
 		fmt.Println("Failed to start server", err)
 	}
