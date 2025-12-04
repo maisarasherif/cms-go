@@ -7,13 +7,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	databases "github.com/maisarasherif/cms-go/Server/cms-server/database"
+	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-var personnelCollection *mongo.Collection = databases.OpenCollection("Personnel")
+var personnelCollection *mongo.Collection = database.OpenCollection("Personnel")
 
 var validate = validator.New()
 
@@ -28,11 +28,13 @@ func GetPersonnel() gin.HandlerFunc {
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch personnel."})
+			return
 		}
 		defer cursor.Close(ctx)
 
 		if err = cursor.All(ctx, &personnel); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode personnel."})
+			return
 
 		}
 

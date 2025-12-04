@@ -21,6 +21,8 @@ func main() {
 
 	router.POST("/addpersonnel", controller.AddPersonnel())
 
+	router.POST("/register", controller.RegisterUser())
+
 	if err := router.Run(":8080"); err != nil {
 		fmt.Println("Failed to start server", err)
 	}

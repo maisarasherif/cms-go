@@ -19,6 +19,6 @@ type Personnel struct {
 	Position     string        `bson:"position" json:"position" validate:"required,min=2,max=100"`
 	Image        *string       `bson:"image" json:"image" validate:"omitempty,url"`
 	T_BOSIET_EXP *time.Time    `bson:"t_bosiet_exp" json:"t_bosiet_exp" validate:"omitempty,gte=now"`
-	Skills       *[]Skills     `bson:"skills" json:"skills" validate:"omitempty,dive"`
+	P_Skills     *[]Skills     `bson:"skills" json:"skills" validate:"omitempty,dive"`
 	Summary      *string       `bson:"summary" json:"summary" validate:"omitempty"`
 }
