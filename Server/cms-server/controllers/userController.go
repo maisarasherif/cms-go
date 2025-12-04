@@ -9,6 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
+	"github.com/maisarasherif/cms-go/Server/cms-server/utils"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"golang.org/x/crypto/bcrypt"
@@ -98,5 +99,28 @@ func LoginUser() gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
+
+		token, refreshToken, err := utils.GenerateAllTokens(foundUser.Email, foundUser.FirstName, foundUser.LastName, foundUser.Role, foundUser.UserID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
+			return
+		}
+
+		err = utils.UpdateAllTokens(foundUser.UserID, token, refreshToken)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update tokens"})
+			return
+		}
+
+		c.JSON(http.StatusOK, models.UserResponse{
+			UserId:       foundUser.UserID,
+			FirstName:    foundUser.FirstName,
+			LastName:     foundUser.LastName,
+			Email:        foundUser.Email,
+			Role:         foundUser.Role,
+			Token:        token,
+			RefreshToken: refreshToken,
+		})
 	}
 }
