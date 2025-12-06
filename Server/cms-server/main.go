@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
-	controller "github.com/maisarasherif/cms-go/Server/cms-server/controllers"
+	routes "github.com/maisarasherif/cms-go/Server/cms-server/routes"
 )
 
 func main() {
@@ -15,15 +15,8 @@ func main() {
 		c.String(200, "Hello, CMS!")
 	})
 
-	router.GET("/personnel", controller.GetPersonnel())
-
-	router.GET("/person/:company_id", controller.GetPerson())
-
-	router.POST("/addpersonnel", controller.AddPersonnel())
-
-	router.POST("/register", controller.RegisterUser())
-
-	router.POST("/login", controller.LoginUser())
+	routes.SetupUnprotectedRoutes(router)
+	routes.SetupProtectedRoutes(router)
 
 	if err := router.Run(":8080"); err != nil {
 		fmt.Println("Failed to start server", err)
