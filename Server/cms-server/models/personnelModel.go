@@ -7,9 +7,11 @@ import (
 )
 
 type Skills struct {
-	SkillID    int    `bson:"skill_id" json:"skill_id" validate:"required"`
-	SkillName  string `bson:"skill_name" json:"skill_name" validate:"required,min=1,max=50"`
-	SkillLevel string `bson:"skill_level" json:"skill_level" validate:"omitempty,min=1,max=50"`
+	ID         bson.ObjectID `bson:"_id,omitempty" json:"_id,omitempty"`
+	SkillID    int           `bson:"skill_id" json:"skill_id" validate:"required"`
+	SkillName  string        `bson:"skill_name" json:"skill_name" validate:"required,min=1,max=50"`
+	SkillValue int           `bson:"skill_value" json:"skill_value" validate:"omitempty"`
+	SkillLevel string        `bson:"skill_level" json:"skill_level" validate:"omitempty,min=1,max=50"`
 }
 
 type Personnel struct {

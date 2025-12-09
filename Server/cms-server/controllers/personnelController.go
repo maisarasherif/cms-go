@@ -2,18 +2,25 @@ package controllers
 
 import (
 	"context"
+	"errors"
+	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/joho/godotenv"
 	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
+	"github.com/tmc/langchaingo/llms/openai"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 var personnelCollection *mongo.Collection = database.OpenCollection("Personnel")
+var skillCollection *mongo.Collection = database.OpenCollection("Skills")
 
 var validate = validator.New()
 
@@ -90,5 +97,150 @@ func AddPersonnel() gin.HandlerFunc {
 
 		c.JSON(http.StatusCreated, result)
 
+	}
+}
+
+func SummaryUpdate() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		personnelId := c.Param("company_id")
+		if personnelId == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "personeel id required"})
+			return
+		}
+		var req struct {
+			Summary string `json:"summary"`
+		}
+		var resp struct {
+			SkillName string `json:"skill_name"`
+			Summary   string `json:"summary"`
+		}
+
+		if err := c.ShouldBind(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+		sentiment, skillVal, err := GetSkillRanking(req.Summary)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error getting skill ranking"})
+			return
+		}
+
+		filter := bson.M{"company_id": personnelId}
+
+		update := bson.M{
+			"$set": bson.M{
+				"summary": req.Summary,
+				"skills": bson.M{
+					"skill_value": skillVal,
+					"skill_name":  sentiment,
+				},
+			},
+		}
+		var ctx, cancel = context.WithTimeout(c.Request.Context(), 100*time.Second)
+		defer cancel()
+		result, err := personnelCollection.UpdateOne(ctx, filter, update)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error updating personnel"})
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "personnel not found"})
+			return
+		}
+
+		resp.SkillName = sentiment
+		resp.Summary = req.Summary
+
+		c.JSON(http.StatusOK, resp)
+
+	}
+
+}
+
+func GetSkillRanking(summary string) (string, int, error) {
+	skills, err := GetSkills()
+
+	if err != nil {
+		return "", 0, err
+	}
+
+	sentimentDelimited := ""
+
+	for _, skill := range skills {
+		if skill.SkillValue != 999 {
+			sentimentDelimited = sentimentDelimited + skill.SkillName + ","
+		}
+	}
+
+	sentimentDelimited = strings.Trim(sentimentDelimited, ",")
+
+	err = godotenv.Load(".env")
+
+	if err != nil {
+		log.Println("Warning: .env file not found")
+	}
+
+	OpenAiApiKey := os.Getenv("OPENAI_API_KEY")
+
+	if OpenAiApiKey == "" {
+		return "", 0, errors.New("could not read OPENAI_API_KEY")
+	}
+
+	llm, err := openai.New(openai.WithToken(OpenAiApiKey))
+
+	if err != nil {
+		return "", 0, err
+	}
+
+	base_prompt_template := os.Getenv("BASE_PROMPT_TEMPLATE")
+
+	base_prompt := strings.Replace(base_prompt_template, "{skills}", sentimentDelimited, 1)
+
+	response, err := llm.Call(context.Background(), base_prompt+summary)
+
+	if err != nil {
+		return "", 0, err
+	}
+	skillVal := 0
+
+	for _, skill := range skills {
+		if skill.SkillName == response {
+			skillVal = skill.SkillValue
+			break
+		}
+	}
+	return response, skillVal, nil
+
+}
+
+func GetSkills() ([]models.Skills, error) {
+	var skills []models.Skills
+
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	cursor, err := skillCollection.Find(ctx, bson.M{})
+
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	if err := cursor.All(ctx, &skills); err != nil {
+		return nil, err
+	}
+
+	return skills, nil
+}
+
+func GetRecommendedPersonnel() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		//		userId, err := utils.GetUserIdFromContext(c)
+		//		if err != nil {
+		//			c.JSON(http.StatusBadRequest, gin.H{"error":"User Id not found on context"})
+		//			return
+		//		}
 	}
 }
