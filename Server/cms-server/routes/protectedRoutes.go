@@ -11,4 +11,5 @@ func SetupProtectedRoutes(router *gin.Engine) {
 
 	router.GET("/person/:company_id", controller.GetPerson())
 	router.POST("/addpersonnel", controller.AddPersonnel())
+	router.GET("/recommendedpersonnel", controller.GetRecommendedPersonnel())
 }

@@ -10,4 +10,5 @@ func SetupUnprotectedRoutes(router *gin.Engine) {
 	router.POST("/register", controller.RegisterUser())
 	router.POST("/login", controller.LoginUser())
 	router.GET("/personnel", controller.GetPersonnel())
+	router.PATCH("/person/:company_id", controller.SummaryUpdate())
 }

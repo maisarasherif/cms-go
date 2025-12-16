@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,9 +15,11 @@ import (
 	"github.com/joho/godotenv"
 	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
+	"github.com/maisarasherif/cms-go/Server/cms-server/utils"
 	"github.com/tmc/langchaingo/llms/openai"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var personnelCollection *mongo.Collection = database.OpenCollection("Personnel")
@@ -237,10 +240,103 @@ func GetSkills() ([]models.Skills, error) {
 
 func GetRecommendedPersonnel() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		//		userId, err := utils.GetUserIdFromContext(c)
-		//		if err != nil {
-		//			c.JSON(http.StatusBadRequest, gin.H{"error":"User Id not found on context"})
-		//			return
-		//		}
+		companyId, err := utils.GetPersonnelID(c)
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "personnel id not found"})
+		}
+		skills, err := GetPersonnelSkills(companyId)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		err = godotenv.Load(".env")
+		if err != nil {
+			log.Println("Warning: .env file not found")
+		}
+
+		var recommendedPersonnelLimitVal int64 = 5
+
+		recommendedPersonnelLimitStr := os.Getenv("RECOMMENDED_PERSONNEL_LIMIT")
+
+		if recommendedPersonnelLimitStr != "" {
+			recommendedPersonnelLimitVal, _ = strconv.ParseInt(recommendedPersonnelLimitStr, 10, 64)
+		}
+
+		findOptions := options.Find()
+
+		findOptions.SetSort(bson.D{{Key: "skills.skill_value", Value: 1}})
+
+		findOptions.SetLimit(recommendedPersonnelLimitVal)
+
+		filter := bson.M{"skills.skill_name": bson.M{"$in": skills}}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		cursor, err := personnelCollection.Find(ctx, filter, findOptions)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching recommended personnel"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var recommendedPersonnel []models.Personnel
+
+		if err := cursor.All(ctx, &recommendedPersonnel); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, recommendedPersonnel)
+
 	}
+}
+
+func GetPersonnelSkills(CompanyID string) ([]string, error) {
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	filter := bson.M{"company_id": CompanyID}
+
+	projection := bson.M{
+		"skills.skill_name": 1,
+		"_id":               0,
+	}
+
+	opts := options.FindOne().SetProjection(projection)
+
+	var results bson.M
+
+	err := userCollection.FindOne(ctx, filter, opts).Decode(&results)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []string{}, nil
+		}
+	}
+
+	SkillsArray, ok := results["skills"].(bson.A)
+
+	if !ok {
+		return []string{}, errors.New("unable to retrieve user data")
+	}
+
+	var skillName []string
+
+	for _, item := range SkillsArray {
+		if skillMap, ok := item.(bson.D); ok {
+			for _, elem := range skillMap {
+				if elem.Key == "skill_name" {
+					if name, ok := elem.Value.(string); ok {
+						skillName = append(skillName, name)
+					}
+				}
+			}
+		}
+	}
+
+	return skillName, nil
 }
