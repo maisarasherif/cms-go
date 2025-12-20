@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,11 +16,9 @@ import (
 	"github.com/joho/godotenv"
 	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
-	"github.com/maisarasherif/cms-go/Server/cms-server/utils"
 	"github.com/tmc/langchaingo/llms/openai"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var personnelCollection *mongo.Collection = database.OpenCollection("Personnel")
@@ -240,10 +239,127 @@ func GetSkills() ([]models.Skills, error) {
 
 func GetRecommendedPersonnel() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var req struct {
+			RequiredSkills []string `json:"required_skills" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "required_skills array is required"})
+			return
+		}
+
+		if len(req.RequiredSkills) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one skill is required"})
+			return
+		}
+
+		err := godotenv.Load(".env")
+		if err != nil {
+			log.Println("Warning: .env file not found")
+		}
+
+		// Find all personnel who have ANY of the required skills
+		filter := bson.M{"skills.skill_name": bson.M{"$in": req.RequiredSkills}}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		cursor, err := personnelCollection.Find(ctx, filter)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching recommended personnel"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var allPersonnel []models.Personnel
+
+		if err := cursor.All(ctx, &allPersonnel); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Calculate match scores for each person
+		type PersonnelWithScore struct {
+			Personnel     models.Personnel `json:"personnel"`
+			MatchScore    float64          `json:"match_score"`
+			MatchCount    int              `json:"match_count"`
+			AvgSkillValue float64          `json:"avg_skill_value"`
+		}
+
+		var scoredPersonnel []PersonnelWithScore
+
+		for _, person := range allPersonnel {
+			if person.Skills == nil {
+				continue
+			}
+
+			var totalSkillValue int
+			var matchCount int
+
+			// Calculate score based on matching skills
+			for _, skill := range *person.Skills {
+				for _, requiredSkill := range req.RequiredSkills {
+					if skill.SkillName == requiredSkill {
+						totalSkillValue += skill.SkillValue
+						matchCount++
+						break
+					}
+				}
+			}
+
+			if matchCount > 0 {
+				avgSkillValue := float64(totalSkillValue) / float64(matchCount)
+				// Lower avg skill value = better match
+				// More matches = better candidate
+				// Score formula: avgSkillValue / matchCount (lower is better)
+				score := avgSkillValue / float64(matchCount)
+
+				scoredPersonnel = append(scoredPersonnel, PersonnelWithScore{
+					Personnel:     person,
+					MatchScore:    score,
+					MatchCount:    matchCount,
+					AvgSkillValue: avgSkillValue,
+				})
+			}
+		}
+
+		// Sort by score (lower is better)
+		sort.Slice(scoredPersonnel, func(i, j int) bool {
+			// First compare by match count (more matches is better)
+			if scoredPersonnel[i].MatchCount != scoredPersonnel[j].MatchCount {
+				return scoredPersonnel[i].MatchCount > scoredPersonnel[j].MatchCount
+			}
+			// Then by average skill value (lower is better)
+			return scoredPersonnel[i].AvgSkillValue < scoredPersonnel[j].AvgSkillValue
+		})
+
+		// Get limit from env
+		var recommendedPersonnelLimitVal int = 10
+		recommendedPersonnelLimitStr := os.Getenv("RECOMMENDED_PERSONNEL_LIMIT")
+		if recommendedPersonnelLimitStr != "" {
+			if limit, err := strconv.Atoi(recommendedPersonnelLimitStr); err == nil {
+				recommendedPersonnelLimitVal = limit
+			}
+		}
+
+		// Apply limit
+		if len(scoredPersonnel) > recommendedPersonnelLimitVal {
+			scoredPersonnel = scoredPersonnel[:recommendedPersonnelLimitVal]
+		}
+
+		c.JSON(http.StatusOK, scoredPersonnel)
+	}
+}
+
+/*
+func GetRecommendedPersonnel() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		companyId, err := utils.GetPersonnelID(c)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "personnel id not found"})
+			return
 		}
 		skills, err := GetPersonnelSkills(companyId)
 
@@ -310,7 +426,7 @@ func GetPersonnelSkills(CompanyID string) ([]string, error) {
 
 	var results bson.M
 
-	err := userCollection.FindOne(ctx, filter, opts).Decode(&results)
+	err := personnelCollection.FindOne(ctx, filter, opts).Decode(&results)
 
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -340,3 +456,4 @@ func GetPersonnelSkills(CompanyID string) ([]string, error) {
 
 	return skillName, nil
 }
+*/
