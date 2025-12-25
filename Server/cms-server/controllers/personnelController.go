@@ -2,13 +2,11 @@ package controllers
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,20 +14,19 @@ import (
 	"github.com/joho/godotenv"
 	database "github.com/maisarasherif/cms-go/Server/cms-server/database"
 	"github.com/maisarasherif/cms-go/Server/cms-server/models"
-	"github.com/tmc/langchaingo/llms/openai"
+	"github.com/maisarasherif/cms-go/Server/cms-server/utils"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-var personnelCollection *mongo.Collection = database.OpenCollection("Personnel")
-var skillCollection *mongo.Collection = database.OpenCollection("Skills")
-
 var validate = validator.New()
 
-func GetPersonnel() gin.HandlerFunc {
+func GetPersonnel(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
 		defer cancel()
+
+		var personnelCollection *mongo.Collection = database.OpenCollection("Personnel", client)
 
 		var personnel []models.Personnel
 
@@ -51,7 +48,7 @@ func GetPersonnel() gin.HandlerFunc {
 	}
 }
 
-func GetPerson() gin.HandlerFunc {
+func GetPerson(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
 		defer cancel()
@@ -64,6 +61,8 @@ func GetPerson() gin.HandlerFunc {
 		}
 		var personnelStruct models.Personnel
 
+		var personnelCollection *mongo.Collection = database.OpenCollection("Personnel", client)
+
 		err := personnelCollection.FindOne(ctx, bson.M{"company_id": PersonnelID}).Decode(&personnelStruct)
 
 		if err != nil {
@@ -75,8 +74,20 @@ func GetPerson() gin.HandlerFunc {
 	}
 }
 
-func AddPersonnel() gin.HandlerFunc {
+func AddPersonnel(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		role, err := utils.GetRoleFromContext(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "role not found in context"})
+			return
+		}
+
+		if role != "ADMIN" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "only ADMINS allowed to add personnel"})
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
 		defer cancel()
 
@@ -90,6 +101,8 @@ func AddPersonnel() gin.HandlerFunc {
 			return
 		}
 
+		var personnelCollection *mongo.Collection = database.OpenCollection("Personnel", client)
+
 		result, err := personnelCollection.InsertOne(ctx, personnel)
 
 		if err != nil {
@@ -102,6 +115,7 @@ func AddPersonnel() gin.HandlerFunc {
 	}
 }
 
+/*
 func SummaryUpdate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		personnelId := c.Param("company_id")
@@ -160,7 +174,8 @@ func SummaryUpdate() gin.HandlerFunc {
 	}
 
 }
-
+*/
+/*
 func GetSkillRanking(summary string) (string, int, error) {
 	skills, err := GetSkills()
 
@@ -216,12 +231,15 @@ func GetSkillRanking(summary string) (string, int, error) {
 	return response, skillVal, nil
 
 }
-
-func GetSkills() ([]models.Skills, error) {
+*/
+/*
+func GetSkills(client *mongo.Client) ([]models.Skills, error) {
 	var skills []models.Skills
 
 	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
+
+	var skillCollection *mongo.Collection = database.OpenCollection("Skills", client)
 
 	cursor, err := skillCollection.Find(ctx, bson.M{})
 
@@ -236,8 +254,9 @@ func GetSkills() ([]models.Skills, error) {
 
 	return skills, nil
 }
+*/
 
-func GetRecommendedPersonnel() gin.HandlerFunc {
+func GetRecommendedPersonnel(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			RequiredSkills []string `json:"required_skills" binding:"required"`
@@ -263,6 +282,8 @@ func GetRecommendedPersonnel() gin.HandlerFunc {
 
 		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
+
+		var personnelCollection *mongo.Collection = database.OpenCollection("Personnel", client)
 
 		cursor, err := personnelCollection.Find(ctx, filter)
 

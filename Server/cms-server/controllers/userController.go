@@ -15,8 +15,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var userCollection *mongo.Collection = database.OpenCollection("Users")
-
 func HashPassword(password string) (string, error) {
 	hashPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -26,7 +24,7 @@ func HashPassword(password string) (string, error) {
 	return string(hashPassword), nil
 }
 
-func RegisterUser() gin.HandlerFunc {
+func RegisterUser(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var user models.User
 
@@ -49,6 +47,8 @@ func RegisterUser() gin.HandlerFunc {
 
 		var ctx, cancel = context.WithTimeout(c.Request.Context(), 100*time.Second)
 		defer cancel()
+
+		var userCollection *mongo.Collection = database.OpenCollection("Users", client)
 
 		count, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
 		if err != nil {
@@ -75,7 +75,7 @@ func RegisterUser() gin.HandlerFunc {
 	}
 }
 
-func LoginUser() gin.HandlerFunc {
+func LoginUser(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var userLogin models.UserLogin
 
@@ -88,6 +88,8 @@ func LoginUser() gin.HandlerFunc {
 		defer cancel()
 
 		var foundUser models.User
+
+		var userCollection *mongo.Collection = database.OpenCollection("Users", client)
 
 		err := userCollection.FindOne(ctx, bson.M{"email": userLogin.Email}).Decode(&foundUser)
 		if err != nil {
@@ -107,7 +109,7 @@ func LoginUser() gin.HandlerFunc {
 			return
 		}
 
-		err = utils.UpdateAllTokens(foundUser.UserID, token, refreshToken)
+		err = utils.UpdateAllTokens(client, foundUser.UserID, token, refreshToken)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update tokens"})
 			return
